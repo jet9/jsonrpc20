@@ -134,7 +134,7 @@ LOG = logging.getLogger(__name__)
 
 __all__ = ["process_request", "wsgi_application", "start_standalone_server",
            "Client"]
-__version__ = "0.2"
+__version__ = "0.2.1"
 
 
 class BaseError(Exception):
