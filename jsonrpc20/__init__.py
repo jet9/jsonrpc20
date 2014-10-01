@@ -248,7 +248,7 @@ def rpc_method(function):
     _register_rpc_method(function)
 
     def wrapper(*args, **kwargs):
-        function(*args, **kwargs)
+        return function(*args, **kwargs)
 
     return wrapper
 
