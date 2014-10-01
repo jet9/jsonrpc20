@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     name='jsonrpc20',
-    version=__import__("ndict").__version__,
+    version=__import__("jsonrpc20").__version__,
     packages=['jsonrpc20'],
     url='https://github.com/jet9/jsonrpc20',
     license='BSD',
