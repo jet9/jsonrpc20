@@ -6,6 +6,8 @@ import json
 import re
 
 from jsonschema import validate, ValidationError
+import urllib2
+import uuid
 from wsgiref.simple_server import make_server
 from ndict import NDict
 
@@ -130,13 +132,16 @@ __RPC = {}
 
 LOG = logging.getLogger(__name__)
 
-__all__ = ["process_request", "wsgi_application", "start_standalone_server"]
-
+__all__ = ["process_request", "wsgi_application", "start_standalone_server",
+           "Client"]
 __version__ = "0.1a"
+
 
 class BaseError(Exception):
     def __init__(self, msg):
         LOG.exception("Exception raised")
+
+        super(Exception, self).__init__(msg)
 
 
 class MethodNotFound(BaseError):
@@ -144,6 +149,10 @@ class MethodNotFound(BaseError):
 
 
 class ModuleNotFound(BaseError):
+    pass
+
+
+class JsonRpcClientError(BaseError):
     pass
 
 
@@ -189,14 +198,19 @@ def _validate_response(response):
 
     :request    dict or json_sring"""
 
+    res = None
     if isinstance(response, dict):
         validate(response, RESPONSE_SCHEMA)
+        res = response
 
     elif isinstance(response, basestring):
-        validate(json.loads(response), RESPONSE_SCHEMA)
+        res = json.loads(response)
+        validate(res, RESPONSE_SCHEMA)
 
     else:
         raise TypeError("Unknown response type: {0}".format(type(response)))
+
+    return res
 
 
 def _extract_module_name(path):
@@ -338,10 +352,86 @@ def start_standalone_server(address="localhost", port=8000, app=wsgi_application
     httpd.serve_forever()
 
 
+class Client(object):
+    """JsonRpc 2.0 client
+
+    c = Client("http://localhost:9000/defmod/json")
+    print(c.ping(**{ "msg": "XXX", "unique": 123451}))
+    """
+
+    def __init__(self, url, timeout=60):
+        """ Constructor """
+
+        self.url = url
+        self.timeout = timeout
+
+        if url.startswith("https://"):
+            self.ssl = True
+        elif url.startswith("http://"):
+            self.ssl = False
+        else:
+            raise JsonRpcClientError("Invalid url: should be http(s)://")
+
+    def __getattr__(self, method, *args, **kwargs):
+        """Proxy for rpc method"""
+
+        def func(*args, **kwargs):
+            """Wrapper for request"""
+
+            return self._request(method, *args, **kwargs)
+
+        return func
+
+    @staticmethod
+    def create_json_request(method, *args, **kwargs):
+        """Create jsonrpc 2.0 request"""
+
+        if len(args) > 0:
+            params = args
+        else:
+            params = kwargs
+
+        return json.dumps({
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "method": method,
+            "params": params
+        }, indent=True)
+
+    def _request(self, method, *args, **kwargs):
+        """Do request"""
+
+        json_request = self.create_json_request(method, *args, **kwargs)
+
+        request = urllib2.Request(url=self.url, data=json_request)
+        LOG.debug("Request: {0}: {1}".format(self.url, json_request))
+
+        response = urllib2.urlopen(request, timeout=self.timeout).read()
+        LOG.debug("Response: {0}".format(response))
+
+        try:
+            response = NDict(_validate_response(response))
+        except ValidationError:
+            raise JsonRpcClientError("Invalid response: {0}".format(response))
+        except TypeError as e:
+            raise JsonRpcClientError("Invalid response type: {0}".format(str(e)))
+
+        if "error" in response.keys():
+            raise JsonRpcClientError("{0}: {1}{2}"
+                                     .format(response.error.code,
+                                             response.error.message,
+                                             ": "+response.error.get("data", "")))
+
+        return response.result
+
+
 if __name__ == "__main__":
 
     # simple example
 
-    req = '{"jsonrpc": "2.0", "method": "echo", "params": [1, "test echo"], "id": 1}'
+    # req = '{"jsonrpc": "2.0", "method": "echo", "params": [1, "test echo"], "id": 1}'
+    # print(process_request("defmod", req))
 
-    print(process_request("defmod", req))
+    c = Client("http://localhost:9000/defmod/json")
+
+    print(c.ping(**{ "msg": "XXX", "unique": 123451}))
