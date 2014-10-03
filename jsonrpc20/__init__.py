@@ -130,11 +130,19 @@ RESPONSE_SCHEMA = {
 
 __RPC = {}
 
-LOG = logging.getLogger(__name__)
 
 __all__ = ["process_request", "wsgi_application", "start_standalone_server",
            "Client"]
 __version__ = "0.2.1"
+
+
+class NullHandler(logging.Handler):
+    """Void handler for python2.6 compatibility"""
+    def emit(self, record):
+        pass
+
+logging.getLogger(__name__).addHandler(NullHandler())
+LOG = logging.getLogger(__name__)
 
 
 class BaseError(Exception):
