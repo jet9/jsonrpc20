@@ -256,7 +256,10 @@ def rpc_method(function):
     _register_rpc_method(function)
 
     def wrapper(*args, **kwargs):
-        return function(*args, **kwargs)
+        try:
+            return function(*args, **kwargs)
+        except Exception:
+            LOG.exception()
 
     return wrapper
 
@@ -268,7 +271,7 @@ def json_ok(result, _id):
         "jsonrpc": "2.0",
         "result": result,
         "id": _id
-    }, indent=True)
+    }, indent=False)
 
 
 def json_error(code, message, _id=None, data=None):
@@ -282,7 +285,7 @@ def json_error(code, message, _id=None, data=None):
             "data": data
         },
         "id": _id
-    }, indent=True)
+    }, indent=False)
 
 
 def process_request(module, request):
@@ -310,6 +313,7 @@ def process_request(module, request):
         except ModuleNotFound as e:
             return json_error(*MODULE_NOT_FOUND, _id=request_id, data=str(e))
 
+        # run wrapped method
         try:
             if isinstance(params, list):
                 result = function(*params)
@@ -318,12 +322,14 @@ def process_request(module, request):
             else:
                 raise TypeError("Invalid parameter type: {0}".format(type(params)))
         except TypeError as e:
+            LOG.exception("Exception while exec wrapped function `{0}`".format(method))
             return json_error(*INVALID_PARAMS, _id=request_id, data=str(e))
 
         if request_id is not None:
             return json_ok(result, request_id)
 
     except Exception as e:
+        LOG.exception("Exception while run wrapped function `{0}`".format(request["method"]))
         return json_error(*INTERNAL_ERROR, data=str(e))
 
 
@@ -404,7 +410,7 @@ class Client(object):
             "id": str(uuid.uuid4()),
             "method": method,
             "params": params
-        }, indent=True)
+        }, indent=False)
 
     def _request(self, method, *args, **kwargs):
         """Do request"""
