@@ -1,0 +1,5 @@
+include Makefile
+include python-jsonrpc20.spec
+include README.md
+include examples
+include tests

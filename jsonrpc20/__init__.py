@@ -133,7 +133,7 @@ __RPC = {}
 
 __all__ = ["process_request", "wsgi_application", "start_standalone_server",
            "Client"]
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 
 class NullHandler(logging.Handler):
@@ -271,7 +271,7 @@ def json_ok(result, _id):
         "jsonrpc": "2.0",
         "result": result,
         "id": _id
-    }, indent=False)
+    })
 
 
 def json_error(code, message, _id=None, data=None):
@@ -285,7 +285,7 @@ def json_error(code, message, _id=None, data=None):
             "data": data
         },
         "id": _id
-    }, indent=False)
+    })
 
 
 def process_request(module, request):
@@ -410,7 +410,7 @@ class Client(object):
             "id": str(uuid.uuid4()),
             "method": method,
             "params": params
-        }, indent=False)
+        })
 
     def _request(self, method, *args, **kwargs):
         """Do request"""
