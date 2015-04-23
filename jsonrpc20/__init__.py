@@ -250,6 +250,23 @@ def _parse_request(environ):
     return request
 
 
+def json_serializer(obj):
+    """Default JSON serializer."""
+
+    import calendar
+    import datetime
+
+    if isinstance(obj, datetime.datetime):
+        if obj.utcoffset() is not None:
+            obj = obj - obj.utcoffset()
+
+    millis = int(
+        calendar.timegm(obj.timetuple()) * 1000 +
+        obj.microsecond / 1000
+    )
+
+    return millis
+
 def rpc_method(function):
     """Decorator: make function possible to RPC"""
 
@@ -271,7 +288,7 @@ def json_ok(result, _id):
         "jsonrpc": "2.0",
         "result": result,
         "id": _id
-    })
+    }, default=json_serializer)
 
 
 def json_error(code, message, _id=None, data=None):
@@ -285,7 +302,7 @@ def json_error(code, message, _id=None, data=None):
             "data": data
         },
         "id": _id
-    })
+    }, default=json_serializer)
 
 
 def process_request(module, request):
@@ -342,6 +359,37 @@ def wsgi_application(environ, start_response):
         start_response(status, headers)
         return [status]
 
+    # update os.environ with common server variables
+    fields = [
+        "SERVER_SOFTWARE",
+        "SCRIPT_NAME",
+        "QUERY_STRING",
+        "SERVER_SIGNATURE",
+        "REQUEST_METHOD",
+        "PATH_INFO",
+        "SERVER_PROTOCOL",
+        "REMOTE_PORT",
+        "SERVER_NAME",
+        "REMOTE_ADDR",
+        "CONTENT_LENGTH",
+        "PATH_TRANSLATED",
+        "SERVER_PORT",
+        "SERVER_ADDR",
+        "DOCUMENT_ROOT",
+        "on",
+        "SCRIPT_FILENAME",
+        "SERVER_ADMIN",
+        "REQUEST_URI",
+        "GATEWAY_INTERFACE",
+        "CONTENT_TYPE"]
+
+    for fld in fields:
+        if fld in environ.keys():
+            os.environ[fld] = str(environ[fld])
+    for k in environ.keys():
+        if k.startswith("HTTP_"):
+            os.environ[k] = str(environ[k])
+
     request = _parse_request(environ)
     result = process_request(request.module, request.body)
 
@@ -351,7 +399,10 @@ def wsgi_application(environ, start_response):
         return []
 
     status = "200 OK"
-    headers = [('Content-type', 'application/json')]
+    headers = [
+        ('Content-type', 'application/json'),
+        ('Access-Control-Allow-Origin', '*')
+    ]
     start_response(status, headers)
 
     #return ["{0}: {1}\n".format(k, environ[k]) for k in sorted(environ)]
@@ -410,7 +461,7 @@ class Client(object):
             "id": str(uuid.uuid4()),
             "method": method,
             "params": params
-        })
+        }, default=json_serializer)
 
     def _request(self, method, *args, **kwargs):
         """Do request"""
