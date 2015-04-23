@@ -3,7 +3,7 @@
 %define _project jsonrpc20
 
 Name:    python-%{_project}
-Version: 0.2.3
+Version: 0.2.4
 Release: 1%{?dist}
 Summary: Yet another jsonrpc 2.0 python implementation with wsgi support
 
