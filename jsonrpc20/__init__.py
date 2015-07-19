@@ -137,7 +137,8 @@ __version__ = "0.2.4"
 
 
 class NullHandler(logging.Handler):
-    """Void handler for python2.6 compatibility"""
+    """Void handler for python2.6 compatibility."""
+
     def emit(self, record):
         pass
 
@@ -176,8 +177,7 @@ def _get_rpc(module, method):
 
 
 def _register_rpc_method(function):
-    """Register rpc method"""
-
+    """Register rpc method."""
     modname = os.path.splitext(os.path.basename(function.func_code.co_filename))[0]
 
     if modname not in __RPC.keys():
@@ -405,7 +405,7 @@ def wsgi_application(environ, start_response):
     ]
     start_response(status, headers)
 
-    #return ["{0}: {1}\n".format(k, environ[k]) for k in sorted(environ)]
+    # return ["{0}: {1}\n".format(k, environ[k]) for k in sorted(environ)]
     return [result]
 
 
@@ -425,7 +425,7 @@ class Client(object):
     """
 
     def __init__(self, url, timeout=60):
-        """ Constructor """
+        """Constructor"""
 
         self.url = url
         self.timeout = timeout
@@ -499,4 +499,4 @@ if __name__ == "__main__":
 
     c = Client("http://localhost:9000/defmod/json")
 
-    print(c.ping(**{ "msg": "XXX", "unique": 123451}))
+    print(c.ping(**{"msg": "XXX", "unique": 123451}))

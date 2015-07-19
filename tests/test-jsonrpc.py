@@ -10,14 +10,20 @@ INVALID_REQUEST02 = '{"jsonrpc": "2.0", "method": "echo2", "params": ["test echo
 INVALID_REQUEST03 = '{"jsonrpc": "2.0", "method": "echo", "params": ["test echo"], "id": 1]'
 INVALID_REQUEST04 = '{"method": "echo", "params": ["test echo"], "id": 1}'
 
+
 @rpc_method
 def echo(msg):
     """Test echo"""
 
     return msg
 
+
 class JsonRpcTest(unittest.TestCase):
+    """JsonRpc Test suite."""
+
     def __init__(self, *args, **kwargs):
+        """Constructor"""
+
         unittest.TestCase.__init__(self, *args, **kwargs)
         self.__test_dir = os.path.dirname(__file__)
         self.do_teardown = True
