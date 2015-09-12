@@ -133,7 +133,7 @@ __RPC = {}
 
 __all__ = ["process_request", "wsgi_application", "start_standalone_server",
            "Client"]
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 
 
 class NullHandler(logging.Handler):
