@@ -267,6 +267,7 @@ def json_serializer(obj):
 
     return millis
 
+
 def rpc_method(function):
     """Decorator: make function possible to RPC"""
 
@@ -276,7 +277,7 @@ def rpc_method(function):
         try:
             return function(*args, **kwargs)
         except Exception:
-            LOG.exception()
+            LOG.exception("rpc_method")
 
     return wrapper
 
@@ -485,7 +486,7 @@ class Client(object):
             raise JsonRpcClientError("{0}: {1}{2}"
                                      .format(response.error.code,
                                              response.error.message,
-                                             ": "+response.error.get("data", "")))
+                                             ": " + response.error.get("data", "")))
 
         return response.result
 
