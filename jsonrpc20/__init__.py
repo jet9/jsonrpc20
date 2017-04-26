@@ -1,15 +1,20 @@
 from __future__ import print_function
 
-import os
-import logging
 import json
+import logging
+import os
 import re
-
-from jsonschema import validate, ValidationError
-import urllib2
 import uuid
+
+from functools import wraps
 from wsgiref.simple_server import make_server
-from ndict import NDict
+from wsgiref.validate import validator
+from jsonschema import validate, ValidationError
+
+try:
+    import urllib.request as urllib2
+except ImportError:
+    import urllib2
 
 # standart specified errors
 RPC_PARSE_ERROR = (-32700, "Parse error")
@@ -133,7 +138,8 @@ __RPC = {}
 
 __all__ = ["process_request", "wsgi_application", "start_standalone_server",
            "Client"]
-__version__ = "0.2.5"
+
+__version__ = "0.3.0"
 
 
 class NullHandler(logging.Handler):
@@ -176,14 +182,19 @@ def _get_rpc(module, method):
         raise MethodNotFound(method)
 
 
-def _register_rpc_method(function):
+def _register_rpc_method(function, scope, real_func):
     """Register rpc method."""
-    modname = os.path.splitext(os.path.basename(function.func_code.co_filename))[0]
+
+    if scope is None:
+        modname = os.path.splitext(os.path.basename(function.__code__.co_filename))[0]
+    else:
+        modname = scope
 
     if modname not in __RPC.keys():
         __RPC[modname] = {}
 
-    __RPC[modname][function.func_name] = function
+    __RPC[modname][function.__name__] = real_func
+    print("Register:", modname, function.__name__)
 
 
 def _validate_request(request):
@@ -194,7 +205,7 @@ def _validate_request(request):
     if isinstance(request, dict):
         validate(request, REQUEST_SCHEMA)
 
-    elif isinstance(request, basestring):
+    elif isinstance(request, str):
         validate(json.loads(request), REQUEST_SCHEMA)
 
     else:
@@ -207,11 +218,14 @@ def _validate_response(response):
     :request    dict or json_sring"""
 
     res = None
+    if isinstance(response, bytes):
+        response = response.decode("utf-8")
+
     if isinstance(response, dict):
         validate(response, RESPONSE_SCHEMA)
         res = response
 
-    elif isinstance(response, basestring):
+    elif isinstance(response, str):
         res = json.loads(response)
         validate(res, RESPONSE_SCHEMA)
 
@@ -236,16 +250,17 @@ def _extract_module_name(path):
 def _parse_request(environ):
     """Parse request and get common parameters"""
 
-    request = NDict({
+    request = {
         "method": environ.get("REQUEST_METHOD", "GET"),
         "query_string:": environ.get("QUERY_STRING", ""),
         "path_info": environ.get("PATH_INFO", "/"),
         "content_length": int(environ.get("CONTENT_LENGTH", 0))
-    })
+    }
 
-    request.body = environ["wsgi.input"].read(request.content_length)
-    request.module = _extract_module_name(request.path_info)
-    LOG.info("Module name: {0}".format(request.module))
+    request["body"] = environ["wsgi.input"].read(request["content_length"]).decode("utf-8")
+    request["module"] = _extract_module_name(request["path_info"])
+    LOG.debug("Module name: {0}".format(request["module"]))
+    LOG.debug("Request: {0}".format(request))
 
     return request
 
@@ -268,18 +283,29 @@ def json_serializer(obj):
     return millis
 
 
-def rpc_method(function):
+def rpc_method(scope="client", chain=None):
     """Decorator: make function possible to RPC"""
 
-    _register_rpc_method(function)
+    def real_decorator(function):
+        @wraps(function)
+        def wrapper(*args, **kwargs):
+            # print("XXX: chain:", chain)
+            _f_chain = function
+            if chain is not None and isinstance(chain, list):
+                # print("XXX: chain 2:", chain)
+                for f in chain:
+                    if callable(f):
+                        _f_chain = f(_f_chain)
+            try:
+                return _f_chain(*args, **kwargs)
+            except Exception:
+                LOG.exception("rpc_method")
+                raise
 
-    def wrapper(*args, **kwargs):
-        try:
-            return function(*args, **kwargs)
-        except Exception:
-            LOG.exception("rpc_method")
-
-    return wrapper
+        _register_rpc_method(function, scope, wrapper)
+        # _register_rpc_method(function, scope)
+        return wrapper
+    return real_decorator
 
 
 def json_ok(result, _id):
@@ -313,6 +339,7 @@ def process_request(module, request):
         try:
             request = json.loads(request)
         except Exception as e:
+            LOG.exception("process_request")
             return json_error(RPC_PARSE_ERROR[0], RPC_PARSE_ERROR[1], data=str(e))
 
         try:
@@ -354,11 +381,22 @@ def process_request(module, request):
 def wsgi_application(environ, start_response):
     """WSGI Application for using in web servers"""
 
-    if environ["REQUEST_METHOD"] != "POST":
-        status = "405 Method Not Allowed"
+    if environ["REQUEST_METHOD"] == "OPTIONS":
+        status = u"200 Ok"
+        headers = [
+            ('Content-type', 'application/json'),
+            ('Access-Control-Allow-Origin', '*'),
+            ('Access-Control-Allow-Methods', '*'),
+            ('Access-Control-Allow-Headers', 'Origin,Accept,Content-Type,X-Requested-With,X-CSRF-Token,X-User,auth-token,access-control-allow-origin')
+        ]
+        start_response(status, headers)
+        return [status.encode()]
+
+    elif environ["REQUEST_METHOD"] != "POST":
+        status = u"405 Method Not Allowed"
         headers = []
         start_response(status, headers)
-        return [status]
+        return [status.encode()]
 
     # update os.environ with common server variables
     fields = [
@@ -387,12 +425,18 @@ def wsgi_application(environ, start_response):
     for fld in fields:
         if fld in environ.keys():
             os.environ[fld] = str(environ[fld])
+    # remove old HTTP_* keys
+    for k in list(os.environ.keys()):
+        if k.startswith("HTTP_"):
+            del os.environ[k]
+    # add new HTTP_* keys
     for k in environ.keys():
         if k.startswith("HTTP_"):
+
             os.environ[k] = str(environ[k])
 
     request = _parse_request(environ)
-    result = process_request(request.module, request.body)
+    result = process_request(request["module"], request["body"])
 
     if result is None:
         status = "200 OK"
@@ -402,17 +446,22 @@ def wsgi_application(environ, start_response):
     status = "200 OK"
     headers = [
         ('Content-type', 'application/json'),
-        ('Access-Control-Allow-Origin', '*')
+        ('Access-Control-Allow-Origin', '*'),
+        ('Access-Control-Allow-Methods', '*'),
+        ('Access-Control-Allow-Headers', '*')
     ]
+        # ('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS'),
+        # ('Access-Control-Allow-Headers', 'Origin, Accept, Content-Type, X-Requested-With, X-CSRF-Token,auth-token,access-control-allow-origin')
     start_response(status, headers)
 
     # return ["{0}: {1}\n".format(k, environ[k]) for k in sorted(environ)]
-    return [result]
+    return [result.encode()]
 
 
 def start_standalone_server(address="localhost", port=8000, app=wsgi_application):
     """Start standalone http server for processing requests"""
 
+    validator_app = validator(app)
     httpd = make_server(address, port, app)
     LOG.info("Serving on  {0}:{1}...".format(address, port))
     httpd.serve_forever()
@@ -425,11 +474,14 @@ class Client(object):
     print(c.ping(**{ "msg": "XXX", "unique": 123451}))
     """
 
-    def __init__(self, url, timeout=60):
+    def __init__(self, url, timeout=60, headers=None):
         """Constructor"""
 
         self.url = url
         self.timeout = timeout
+        self.headers = {}
+        if headers is not None:
+            self.headers = headers
 
         if url.startswith("https://"):
             self.ssl = True
@@ -444,7 +496,7 @@ class Client(object):
         def func(*args, **kwargs):
             """Wrapper for request"""
 
-            return self._request(method, *args, **kwargs)
+            return self.request(method, *args, **kwargs)
 
         return func
 
@@ -464,19 +516,19 @@ class Client(object):
             "params": params
         }, default=json_serializer)
 
-    def _request(self, method, *args, **kwargs):
+    def request(self, method, *args, **kwargs):
         """Do request"""
 
-        json_request = self.create_json_request(method, *args, **kwargs)
+        json_request = str.encode(self.create_json_request(method, *args, **kwargs))
 
-        request = urllib2.Request(url=self.url, data=json_request)
+        request = urllib2.Request(url=self.url, data=json_request, headers=self.headers)
         LOG.debug("Request: {0}: {1}".format(self.url, json_request))
 
         response = urllib2.urlopen(request, timeout=self.timeout).read()
         LOG.debug("Response: {0}".format(response))
 
         try:
-            response = NDict(_validate_response(response))
+            response = _validate_response(response)
         except ValidationError:
             raise JsonRpcClientError("Invalid response: {0}".format(response))
         except TypeError as e:
@@ -484,11 +536,11 @@ class Client(object):
 
         if "error" in response.keys():
             raise JsonRpcClientError("{0}: {1}{2}"
-                                     .format(response.error.code,
-                                             response.error.message,
-                                             ": " + response.error.get("data", "")))
+                                     .format(response["error"]["code"],
+                                             response["error"]["message"],
+                                             ": " + response["error"].get("data", "")))
 
-        return response.result
+        return response["result"]
 
 
 if __name__ == "__main__":

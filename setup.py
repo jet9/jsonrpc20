@@ -8,7 +8,7 @@ setup(
     license='BSD',
     author='Dmitry Kurbatov',
     author_email='dk@dimcha.ru',
-    requires=["ndict", "jsonschema"],
+    requires=["jsonschema"],
     description='Yet another jsonrpc 2.0 python implementation with wsgi support',
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
